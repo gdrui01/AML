@@ -11,7 +11,7 @@ import numpy as np
 RANDOM_NUMBER = 696969
 
 def detect_outliers(X, y):
-    iso_forest = IsolationForest(n_estimators='auto', contamination=0.069, random_state=RANDOM_NUMBER)
+    iso_forest = IsolationForest(n_estimators=150, max_samples='auto', contamination=0.069, random_state=RANDOM_NUMBER)
     prediction = iso_forest.fit_predict(X)
     inliners = prediction == 1
     return X.loc[inliners], y.loc[inliners]
@@ -66,42 +66,51 @@ def main():
     X_test_feat  = X_test.drop(columns=['id'])
 
     # split data set
-    X_tr, X_val, y_tr, y_val = train_test_split(X_train_feat, y_train_trgt, test_size=0.15, random_state=RANDOM_NUMBER)
+    # IDEA !! cross validation for more epochs
+    X_train, X_val, y_train, y_val = train_test_split(X_train_feat, y_train_trgt, test_size=0.15, random_state=RANDOM_NUMBER)
 
     # impute missing vals
-    X_tr_imp, imputer = process_missing_vals(X_tr, imputer=None)
+    X_train_imp, imputer = process_missing_vals(X_train, imputer=None)
     X_val_imp, _      = process_missing_vals(X_val, imputer=imputer)
     X_test_imp, _     = process_missing_vals(X_test_feat, imputer=imputer)
 
     # detect outliers
-    X_train_feat, y_train_trgt = detect_outliers(X_train_feat, y_train_trgt)
+    X_train_outliers, y_train_outliers = detect_outliers(X_train_imp, y_train)
+    X_val_outliers, y_val_outliers     = detect_outliers(X_val_imp, y_val)
+    
 
     # select features
-    X_train_feat,pca = select_features(X_train_feat, y_train_trgt)
-    X_test_imp = pca.transform(X_test_imp)
+    X_train_pca,pca = select_features(X_train_outliers, y_train_outliers)
+    X_val_pca = pca.transform(X_val_outliers)
+    X_test_pca = pca.transform(X_test_imp)
 
 
-    # scale for high-dim linear regression
+    # scale for high-dim linear regression -> put all the features on the same scale
     scaler = StandardScaler()
-    X_tr_sc     = scaler.fit_transform(X_tr_imp)
-    X_val_sc    = scaler.transform(X_val_imp)
-    X_test_sc   = scaler.transform(X_test_imp)
+    X_train_scaled     = scaler.fit_transform(X_train_pca)
+    X_val_scaled   = scaler.transform(X_val_pca)
+    X_test_scaled   = scaler.transform(X_test_pca)
 
     # model
     model = build_model()
-    model.fit(X_tr_sc, y_tr)
+    model.fit(X_train_scaled, y_train_outliers)
 
     # validation
-    y_val_pred = model.predict(X_val_sc)
-    print("R^2: ", r2_score(y_val, y_val_pred))
+    y_val_pred = model.predict(X_val_scaled)
+    print("R^2: ", r2_score(y_val_outliers, y_val_pred))
 
     # train on all data
-    X_comp_imp, _ = process_missing_vals(X_train_feat, imputer=imputer)
-    X_comp_sc     = scaler.fit_transform(X_comp_imp)
-    model.fit(X_comp_sc, y_train_trgt)
+    X_complete_imp, _ = process_missing_vals(X_train_feat, imputer=imputer)
+    X_complete_outliers, y_complete_outliers = detect_outliers(X_complete_imp, y_train_trgt)
+    X_complete_pca,pca_complete = select_features(X_complete_outliers, y_complete_outliers)
+    X_test_complete_pca = pca_complete.transform(X_test_imp)
+
+    X_complete_scaled     = scaler.fit_transform(X_complete_pca)
+    X_test_complete_scaled  = scaler.transform(X_test_complete_pca)
+    model.fit(X_complete_scaled, y_train_outliers)
 
     # predict test data and write submission
-    y_test_pred = model.predict(X_test_sc)
+    y_test_pred = model.predict(X_test_complete_scaled)
     output_submission(test_ids, y_test_pred)
 
 
