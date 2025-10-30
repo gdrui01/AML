@@ -16,10 +16,20 @@ def detect_outliers(X, y):
     inliners = prediction == 1
     return X.loc[inliners], y.loc[inliners]
 
-def select_features(X, y):
-    
+def select_features(X, y, explained_variance_threshold=0.95, max_features=None, random_state=RANDOM_NUMBER):
+    if max_features is None:
+        max_features = X.shape[1]
 
-    return X
+    pca_probe = PCA(n_components=max_features, random_state=random_state)
+    pca_probe.fit(X)
+    cumulative_var = np.cumsum(pca_probe.explained_variance_ratio_)
+    n_features = np.searchsorted(cumulative_var, explained_variance_threshold) + 1
+    n_features = min(n_features, max_features)
+
+    pca = PCA(n_components=n_features, random_state=RANDOM_NUMBER)
+    X_pca = pca.fit_transform(X)
+
+    return X_pca, pca 
 
 
 def process_missing_vals(X, imputer=None):
@@ -67,7 +77,8 @@ def main():
     X_train_feat, y_train_trgt = detect_outliers(X_train_feat, y_train_trgt)
 
     # select features
-    X_train_feat = select_features(X_train_feat, y_train_trgt)
+    X_train_feat,pca = select_features(X_train_feat, y_train_trgt)
+    X_test_imp = pca.transform(X_test_imp)
 
 
     # scale for high-dim linear regression
